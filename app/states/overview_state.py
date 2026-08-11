@@ -30,13 +30,23 @@ SOURCE_MIX: list[tuple[str, int]] = [
     ("fotmob", 1),
     ("mutating", 1),
     ("sportscore", 1),
+    ("fudbal91", 1),
 ]
 SOURCE_MIX_LABELS: dict[str, str] = {
     "bzz": "BZZ API",
     "fotmob": "Fotmob",
     "mutating": "Mutating",
     "sportscore": "SportScore",
+    "fudbal91": "Fudbal91",
 }
+
+# Fudbal91 НЕ објавува официјална сигурност, па поддршката е изведена САМО од
+# јавните просечни квоти и од реално најдениот статистички контекст.
+FUDBAL91_MARKET_LABEL = "Fudbal91 · изведена поддршка од просечни квоти"
+FUDBAL91_MARKET_WITH_ODDS = (
+    "Fudbal91 · изведена поддршка · избор на изворот {pick} "
+    "(просечна квота {odds:.2f})"
+)
 
 
 class MatchPick(TypedDict):
@@ -193,6 +203,10 @@ class OverviewState(rx.State):
     @rx.var
     def sportscore_pick_count(self) -> int:
         return len([p for p in self.picks if p["source"] == "sportscore"])
+
+    @rx.var
+    def fudbal91_pick_count(self) -> int:
+        return len([p for p in self.picks if p["source"] == "fudbal91"])
 
     @rx.var
     def hit_rate(self) -> float:
@@ -459,6 +473,55 @@ class OverviewState(rx.State):
             )
         return picks
 
+    def _fudbal91_picks(self, rows: list[dict]) -> list[MatchPick]:
+        """Избори од Fudbal91 само за настани непокриени од другите извори.
+
+        Сигурноста е изведена поддршка (имплицирана веројатност од јавните
+        просечни квоти), НЕ официјална сигурност на изворот. Квота и предност
+        остануваат недостапни и не се измислуваат.
+        """
+        picks: list[MatchPick] = []
+        for row in rows:
+            if row.get("covered") or not row.get("is_upcoming"):
+                continue
+            row_id = str(row.get("id") or "")
+            label = str(row.get("top_label") or "")
+            support = row.get("top_probability")
+            if not row_id or not label or label == "недостапно":
+                continue
+            if not isinstance(support, (int, float)) or float(support) <= 0.0:
+                continue
+            source_odds = row.get("source_pick_odds")
+            market = FUDBAL91_MARKET_LABEL
+            if (
+                row.get("has_source_pick")
+                and isinstance(source_odds, (int, float))
+                and float(source_odds) > 1.0
+            ):
+                market = FUDBAL91_MARKET_WITH_ODDS.format(
+                    pick=str(row.get("source_pick") or ""),
+                    odds=float(source_odds),
+                )
+            picks.append(
+                MatchPick(
+                    id=row_id,
+                    kickoff=str(row.get("kickoff") or "--:--"),
+                    league=str(row.get("competition") or "—"),
+                    home=str(row.get("home") or ""),
+                    away=str(row.get("away") or ""),
+                    market=market,
+                    pick=label,
+                    confidence=round(float(support), 1),
+                    odds=0.0,
+                    edge=0.0,
+                    status="upcoming",
+                    source="fudbal91",
+                    source_label="Fudbal91",
+                    has_odds=False,
+                )
+            )
+        return picks
+
     def _derive(
         self,
         matches: list[BSDMatch],
@@ -466,6 +529,7 @@ class OverviewState(rx.State):
         mutating_rows: list[dict] | None = None,
         covered: set[str] | None = None,
         sportscore_rows: list[dict] | None = None,
+        fudbal91_rows: list[dict] | None = None,
     ) -> None:
         picks: list[MatchPick] = []
         for match in matches:
@@ -494,6 +558,7 @@ class OverviewState(rx.State):
             self._mutating_picks(mutating_rows or [], covered or set())
         )
         picks.extend(self._sportscore_picks(sportscore_rows or []))
+        picks.extend(self._fudbal91_picks(fudbal91_rows or []))
         self.picks = picks
         self.missing_predictions = len(
             [m for m in matches if not m["has_prediction"]]
@@ -592,12 +657,14 @@ class OverviewState(rx.State):
 
     @rx.event
     async def sync(self):
+        from app.states.fudbal91_state import Fudbal91State
         from app.states.mutating_state import MutatingState
         from app.states.sportscore_state import SportScoreState
 
         bsd = await self.get_state(BSDState)
         mutating = await self.get_state(MutatingState)
         sportscore = await self.get_state(SportScoreState)
+        fudbal91 = await self.get_state(Fudbal91State)
         self.error = bsd.error
         self._derive(
             bsd.matches,
@@ -605,6 +672,7 @@ class OverviewState(rx.State):
             [dict(row) for row in mutating.rows],
             set(mutating.covered_keys),
             [dict(row) for row in sportscore.rows],
+            [dict(row) for row in fudbal91.rows],
         )
 
     @rx.event

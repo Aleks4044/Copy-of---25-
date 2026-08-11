@@ -284,6 +284,13 @@ class Fudbal91State(rx.State):
         self.has_loaded = True
         self.is_loading = False
 
+    def _dependent_events(self):
+        """Агрегатите што користат Fudbal91 изведени редови."""
+        from app.states.markets_state import MarketsState
+        from app.states.overview_state import OverviewState
+
+        return [OverviewState.sync, MarketsState.sync]
+
     @rx.event
     async def load(self):
         if self.has_loaded or self.is_loading:
@@ -291,6 +298,8 @@ class Fudbal91State(rx.State):
         yield
         await self._load()
         yield
+        for event in self._dependent_events():
+            yield event
 
     @rx.event
     async def refresh(self):
@@ -299,6 +308,8 @@ class Fudbal91State(rx.State):
         yield
         await self._load()
         yield
+        for event in self._dependent_events():
+            yield event
 
     @rx.event
     async def sync(self):

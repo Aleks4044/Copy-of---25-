@@ -28,7 +28,12 @@ def _header() -> rx.Component:
                 class_name="mt-1 max-w-3xl text-sm font-medium text-zinc-500",
             ),
             rx.el.p(
-                f"Извори: {MarketsState.sources_label} · Mutating и SportScore не објавуваат квоти, па квотата и предноста стојат како „недостапно“ и не се измислуваат",
+                f"Извори: {MarketsState.sources_label} · Mutating, SportScore и Fudbal91 не даваат маркет квоти за изведените редови, па квотата и предноста стојат како „недостапно“ и не се измислуваат",
+            ),
+            rx.el.p(
+                "Fudbal91 редовите се изведени од јавните просечни квоти "
+                "(имплицирана поддршка), не од официјална сигурност, и се "
+                "прикажани само за настани непокриени од другите извори.",
                 class_name="mt-1 max-w-3xl text-xs font-medium text-zinc-600",
             ),
             class_name="flex min-w-0 flex-col",
@@ -587,7 +592,7 @@ def markets_view() -> rx.Component:
                 class_name="w-full",
             ),
             unavailable_note(
-                "Ниту еден извор (BZZ, Fotmob, Mutating, SportScore) не врати "
+                "Ниту еден извор (BZZ, Fotmob, Mutating, SportScore, Fudbal91) не врати "
                 "реални веројатности, па комбинираните маркети не можат да се "
                 "пресметаат"
             ),

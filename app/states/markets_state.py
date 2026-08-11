@@ -17,6 +17,7 @@ MAX_VISIBLE_ROWS = 60
 EXTRA_GROUP_LABELS: dict[str, str] = {
     "source_goals": "Извори · Голови и ГГ",
     "source_outcome": "Извори · Исход",
+    "source_double": "Извори · Двоен шанс",
 }
 ALL_GROUP_LABELS: dict[str, str] = {
     **COMBO_GROUP_LABELS,
@@ -173,6 +174,134 @@ class MarketsState(rx.State):
                 )
         return out
 
+    def _fudbal91_group(self, label: str) -> str:
+        """Групата за изведен Fudbal91 ред според самата ознака на опцијата."""
+        if label.startswith("Над") or label.startswith("Под"):
+            return "source_goals"
+        head = label.split(" ")[0].upper()
+        if head in ("1X", "12", "X2"):
+            return "source_double"
+        return "source_outcome"
+
+    def _fudbal91_tag(self, label: str) -> str:
+        """Ознака за чист директен избор; комбинациите остануваат без."""
+        head = label.split(" ")[0].upper()
+        if head == "1":
+            return "home"
+        if head == "X":
+            return "draw"
+        if head == "2":
+            return "away"
+        if label.startswith("Над 2.5"):
+            return "over25"
+        if label.startswith("Под 2.5"):
+            return "under25"
+        if label.startswith("Над 1.5"):
+            return "over15"
+        if label.startswith("Под 1.5"):
+            return "under15"
+        return ""
+
+    def _fudbal91_rows(self, rows: list[dict]) -> list[MarketRow]:
+        """Изведени маркети од јавните просечни квоти на Fudbal91.
+
+        Прикажани се САМО непокриени претстојни настани. Веројатностите се
+        имплицирани од просечните квоти (без маржа), а квотата и предноста
+        остануваат недостапни — ништо не се измислува.
+        """
+        out: list[MarketRow] = []
+        for row in rows:
+            if row.get("covered") or not row.get("is_upcoming"):
+                continue
+            match_id = str(row.get("id") or "")
+            if not match_id:
+                continue
+            home = str(row.get("home") or "")
+            away = str(row.get("away") or "")
+            match_label = f"{home} — {away}"
+            league = str(row.get("competition") or "—")
+            kickoff = str(row.get("kickoff") or "--:--")
+            p_home = _parse_pct(row.get("prob_home"))
+            p_draw = _parse_pct(row.get("prob_draw"))
+            p_away = _parse_pct(row.get("prob_away"))
+            p_over = _parse_pct(row.get("prob_over25"))
+            p_under = _parse_pct(row.get("prob_under25"))
+            entries: list[tuple[str, str, float]] = []
+            if p_home is not None:
+                entries.append(("1", f"1 · {home}", p_home))
+            if p_draw is not None:
+                entries.append(("x", "X · Реми", p_draw))
+            if p_away is not None:
+                entries.append(("2", f"2 · {away}", p_away))
+            if p_home is not None and p_draw is not None:
+                entries.append(
+                    (
+                        "dc-1x",
+                        "1X · домашен или реми",
+                        round(min(99.0, p_home + p_draw), 1),
+                    )
+                )
+            if p_home is not None and p_away is not None:
+                entries.append(
+                    (
+                        "dc-12",
+                        "12 · без реми",
+                        round(min(99.0, p_home + p_away), 1),
+                    )
+                )
+            if p_draw is not None and p_away is not None:
+                entries.append(
+                    (
+                        "dc-x2",
+                        "X2 · реми или гостин",
+                        round(min(99.0, p_draw + p_away), 1),
+                    )
+                )
+            if p_over is not None:
+                entries.append(("o25", "Над 2.5 гола", p_over))
+            if p_under is not None:
+                entries.append(("u25", "Под 2.5 гола", p_under))
+            seen = {label for _key, label, _prob in entries}
+            options = row.get("options")
+            if isinstance(options, list):
+                for index, option in enumerate(options):
+                    if not isinstance(option, dict):
+                        continue
+                    label = str(option.get("label") or "")
+                    probability = _parse_pct(option.get("probability"))
+                    if not label or label in seen or probability is None:
+                        continue
+                    seen.add(label)
+                    entries.append((f"top-{index}", label, probability))
+            for key, label, probability in entries:
+                if probability <= 0.0:
+                    continue
+                tag = self._fudbal91_tag(label)
+                group = self._fudbal91_group(label)
+                out.append(
+                    MarketRow(
+                        id=f"{match_id}-{key}",
+                        match_id=match_id,
+                        match_label=match_label,
+                        league=league,
+                        kickoff=kickoff,
+                        status="upcoming",
+                        label=label,
+                        group=group,
+                        group_label=ALL_GROUP_LABELS[group],
+                        probability=probability,
+                        odds=0.0,
+                        edge=0.0,
+                        recommended=probability > 40.0,
+                        recommendation=_recommendation_label(probability),
+                        market_tags=[tag] if tag else [],
+                        source="fudbal91",
+                        source_label="Fudbal91",
+                        has_odds=False,
+                    )
+                )
+        return out
+
     def _sportscore_rows(self, rows: list[dict]) -> list[MarketRow]:
         """Маркети изведени САМО од реални SportScore статистики."""
         out: list[MarketRow] = []
@@ -255,6 +384,7 @@ class MarketsState(rx.State):
         mutating_rows: list[dict] | None = None,
         covered: set[str] | None = None,
         sportscore_rows: list[dict] | None = None,
+        fudbal91_rows: list[dict] | None = None,
     ) -> None:
         """Ги собира комбинираните маркети од сите реални извори."""
         rows: list[MarketRow] = []
@@ -290,6 +420,7 @@ class MarketsState(rx.State):
                 )
         rows.extend(self._mutating_rows(mutating_rows or [], covered or set()))
         rows.extend(self._sportscore_rows(sportscore_rows or []))
+        rows.extend(self._fudbal91_rows(fudbal91_rows or []))
         self.rows_cache = rows
         self.combos_per_match = predicted[0]["combo_count"] if predicted else 0
         self.generated_at = generated_at or local_clock()
@@ -386,6 +517,7 @@ class MarketsState(rx.State):
             "fotmob": "Fotmob",
             "mutating": "Mutating",
             "sportscore": "SportScore",
+            "fudbal91": "Fudbal91",
         }
         out: list[dict[str, str]] = []
         for key, label in labels.items():
@@ -526,13 +658,14 @@ class MarketsState(rx.State):
     @rx.event
     async def sync(self):
         from app.states.bsd_state import BSDState
-
+        from app.states.fudbal91_state import Fudbal91State
         from app.states.mutating_state import MutatingState
         from app.states.sportscore_state import SportScoreState
 
         bsd = await self.get_state(BSDState)
         mutating = await self.get_state(MutatingState)
         sportscore = await self.get_state(SportScoreState)
+        fudbal91 = await self.get_state(Fudbal91State)
         self.error = bsd.error
         self._build_rows(
             bsd.matches,
@@ -540,6 +673,7 @@ class MarketsState(rx.State):
             [dict(row) for row in mutating.rows],
             set(mutating.covered_keys),
             [dict(row) for row in sportscore.rows],
+            [dict(row) for row in fudbal91.rows],
         )
 
     @rx.event
