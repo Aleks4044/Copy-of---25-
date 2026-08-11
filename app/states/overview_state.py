@@ -19,6 +19,10 @@ PICKS_VIEWS: dict[str, dict[str, int]] = {
     "top15": {"limit": 15, "rotation": 2, "offset": 2},
 }
 
+# Редот по кој се пресметуваат приказите: секој поголем приказ се проверува
+# наспроти сите претходни за да не почне со истиот (помал) избор.
+PICKS_VIEW_ORDER: list[str] = ["top5", "top10", "top15"]
+
 # Тежинско наизменично мешање по извор: во секој круг се земаат до толку
 # избори од секој извор, а внатре во изворот редот е по реална сигурност.
 SOURCE_MIX: list[tuple[str, int]] = [
@@ -79,6 +83,23 @@ def _parse_pct(label: object) -> float | None:
     if value <= 0.0 or value > 100.0:
         return None
     return round(value, 1)
+
+
+def _starts_with(rows: list["MatchPick"], smaller: list["MatchPick"]) -> bool:
+    """Дали `rows` започнува точно со целата секвенца од `smaller`."""
+    if not smaller or len(smaller) > len(rows):
+        return False
+    return [r["id"] for r in rows[: len(smaller)]] == [r["id"] for r in smaller]
+
+
+def _rotate_pool(rows: list["MatchPick"], shift: int) -> list["MatchPick"]:
+    """Детерминистичка ротација на веќе реални избори (без измислување)."""
+    if not rows:
+        return []
+    step = shift % len(rows)
+    if step == 0:
+        return list(rows)
+    return rows[step:] + rows[:step]
 
 
 def _is_correct(match: BSDMatch) -> bool | None:
@@ -233,13 +254,73 @@ class OverviewState(rx.State):
     def mixed_picks(self) -> list[MatchPick]:
         return self._mix(0, 0)
 
-    @rx.var
-    def top_picks(self) -> list[MatchPick]:
-        view = PICKS_VIEWS.get(self.picks_view, PICKS_VIEWS["top5"])
-        rows = self._mix(view["rotation"], view["offset"])
-        return rows[: view["limit"]]
+    def _distinct_rows(
+        self,
+        pool: list[MatchPick],
+        limit: int,
+        previous: list[list[MatchPick]],
+    ) -> list[MatchPick]:
+        """Ги враќа првите `limit` избори така што не повторуваат помал приказ.
 
-    @rx.var
+        Работи САМО со веќе реалните избори: единствената промена е
+        детерминистичка ротација на редот. Ако некоја ротација започнува со
+        истиот прв избор како некој помал приказ (што е предуслов за целосно
+        совпаѓање на префиксот), таа се прескокнува. Ако сите ротации се
+        неупотребливи (премалку избори), првите два избори се разменуваат за
+        да не остане идентичен префикс.
+        """
+        size = min(limit, len(pool))
+        if size <= 0:
+            return []
+        rows = pool[:size]
+        earlier = [rowset for rowset in previous if rowset]
+        if not earlier:
+            return rows
+        blocked_first = {rowset[0]["id"] for rowset in earlier}
+        for shift in range(len(pool)):
+            candidate = _rotate_pool(pool, shift)[:size]
+            if candidate[0]["id"] in blocked_first:
+                continue
+            if any(_starts_with(candidate, prev) for prev in earlier):
+                continue
+            return candidate
+        for shift in range(len(pool)):
+            candidate = _rotate_pool(pool, shift)[:size]
+            if not any(_starts_with(candidate, prev) for prev in earlier):
+                return candidate
+        rows = pool[:size]
+        if len(rows) > 1:
+            rows = [rows[1], rows[0], *rows[2:]]
+        return rows
+
+    def _selection(self, view: str) -> list[MatchPick]:
+        """Избор за даден приказ, различен од сите помали прикази.
+
+        Секој приказ прво добива свој мешан ред (ротација по извор + офсет).
+        Потоа се проверува наспроти сите претходно пресметани помали прикази:
+        „Топ 10“ никогаш не почнува со целата секвенца на „Топ 5“, а „Топ 15“
+        никогаш не почнува со целата секвенца на „Топ 10“ — доколку има
+        доволно реални избори. Ништо не се измислува: само редоследот на
+        веќе реалните избори се ротира детерминистички.
+        """
+        target = view if view in PICKS_VIEWS else "top5"
+        chosen: dict[str, list[MatchPick]] = {}
+        for name in PICKS_VIEW_ORDER:
+            config = PICKS_VIEWS[name]
+            pool = self._mix(config["rotation"], config["offset"])
+            rows = self._distinct_rows(
+                pool, config["limit"], list(chosen.values())
+            )
+            chosen[name] = rows
+            if name == target:
+                return rows
+        return chosen.get(target, [])
+
+    @rx.var(cache=False)
+    def top_picks(self) -> list[MatchPick]:
+        return self._selection(self.picks_view)
+
+    @rx.var(cache=False)
     def top_picks_mix_label(self) -> str:
         rows = self.top_picks
         if not rows:

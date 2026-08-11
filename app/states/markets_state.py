@@ -599,11 +599,18 @@ class MarketsState(rx.State):
         self.sort_key = key
 
     @rx.event
-    def set_min_probability(self, value: str):
+    def set_min_probability(self, value: float):
+        """Го поставува минималниот процент од range влезот.
+
+        Reflex го праќа `on_change` како број, но HTML range може да даде и
+        текст, па вредноста се претвора дефанзивно и се ограничува на
+        дозволениот опсег (0–90) за да остане филтерот валиден.
+        """
         try:
-            self.min_probability = float(value)
-        except ValueError:
-            self.min_probability = 0.0
+            number = float(value)
+        except (TypeError, ValueError):
+            number = 0.0
+        self.min_probability = round(max(0.0, min(90.0, number)), 1)
 
     @rx.event
     def toggle_only_recommended(self):
