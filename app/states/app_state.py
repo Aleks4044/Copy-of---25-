@@ -81,7 +81,6 @@ class AppState(rx.State):
     @rx.event
     async def refresh_now(self):
         from app.states.bsd_state import BSDState
-        from app.states.comparison_state import ComparisonState
         from app.states.fudbal91_state import Fudbal91State
         from app.states.markets_state import MarketsState
         from app.states.models_state import ModelsState
@@ -101,7 +100,6 @@ class AppState(rx.State):
         yield Fudbal91State.refresh
         yield OverviewState.sync
         yield MarketsState.sync
-        yield ComparisonState.sync
         yield ModelsState.sync
         await self._apply_backoff()
         self.last_updated = local_clock()
@@ -138,7 +136,6 @@ class AppState(rx.State):
                 continue
 
             from app.states.bsd_state import BSDState
-            from app.states.comparison_state import ComparisonState
             from app.states.fudbal91_state import Fudbal91State
             from app.states.markets_state import MarketsState
             from app.states.models_state import ModelsState
@@ -157,7 +154,6 @@ class AppState(rx.State):
                 yield Fudbal91State.refresh
             yield OverviewState.sync
             yield MarketsState.sync
-            yield ComparisonState.sync
             if not light_cycle:
                 yield ModelsState.sync
 

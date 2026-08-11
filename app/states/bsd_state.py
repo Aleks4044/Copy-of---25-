@@ -1986,7 +1986,6 @@ class BSDState(rx.State):
 
     def _sync_events(self):
         """Ги враќа настаните за синхронизација на зависните состојби."""
-        from app.states.comparison_state import ComparisonState
         from app.states.fudbal91_state import Fudbal91State
         from app.states.markets_state import MarketsState
         from app.states.models_state import ModelsState
@@ -1998,7 +1997,6 @@ class BSDState(rx.State):
             Fudbal91State.sync,
             OverviewState.sync,
             MarketsState.sync,
-            ComparisonState.sync,
             ModelsState.sync,
         ]
 

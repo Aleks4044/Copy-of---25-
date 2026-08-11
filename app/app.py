@@ -1,7 +1,6 @@
 import reflex as rx
 
 from app.components.bsd_predictions import bsd_predictions
-from app.components.comparison_view import comparison_view
 from app.components.header import header
 from app.components.markets_view import markets_view
 from app.components.models_view import models_view
@@ -11,7 +10,6 @@ from app.components.sportscore_view import sportscore_view
 from app.components.tab_nav import tab_nav
 from app.states.app_state import AppState
 from app.states.bsd_state import BSDState
-from app.states.comparison_state import ComparisonState
 from app.states.fudbal91_state import Fudbal91State
 from app.states.markets_state import MarketsState
 from app.states.models_state import ModelsState
@@ -27,7 +25,6 @@ def tab_content() -> rx.Component:
         ("bsd", bsd_predictions()),
         ("models", models_view()),
         ("markets", markets_view()),
-        ("compare", comparison_view()),
         ("sources", mutating_panel()),
         ("sportscore", sportscore_view()),
         overview(),
@@ -77,7 +74,6 @@ app.add_page(
         MutatingState.load,
         OverviewState.load,
         MarketsState.load,
-        ComparisonState.load,
         ModelsState.load,
         SportScoreState.load,
         Fudbal91State.load,

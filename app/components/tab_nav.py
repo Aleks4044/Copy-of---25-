@@ -7,7 +7,6 @@ TABS: list[dict[str, str]] = [
     {"key": "bsd", "label": "BSD Предвидувања", "icon": "activity"},
     {"key": "models", "label": "25 Модели", "icon": "brain"},
     {"key": "markets", "label": "Комбинирани", "icon": "layers"},
-    {"key": "compare", "label": "BZZ vs Fotmob", "icon": "git-compare"},
     {"key": "sources", "label": "Mutating", "icon": "database"},
     {"key": "sportscore", "label": "Дополнителни", "icon": "globe"},
 ]
