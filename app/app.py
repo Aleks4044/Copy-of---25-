@@ -12,6 +12,7 @@ from app.components.tab_nav import tab_nav
 from app.states.app_state import AppState
 from app.states.bsd_state import BSDState
 from app.states.comparison_state import ComparisonState
+from app.states.fudbal91_state import Fudbal91State
 from app.states.markets_state import MarketsState
 from app.states.models_state import ModelsState
 from app.states.mutating_state import MutatingState
@@ -79,6 +80,7 @@ app.add_page(
         ComparisonState.load,
         ModelsState.load,
         SportScoreState.load,
+        Fudbal91State.load,
         AppState.start_clock,
     ],
 )

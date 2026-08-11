@@ -1,6 +1,7 @@
 import reflex as rx
 
 from app.components.api_status import unavailable_note
+from app.components.fudbal91_panel import fudbal91_match_context
 from app.states.bsd_state import BSDMatch, BSDState, ComboMarket, ModelPick
 
 
@@ -769,6 +770,7 @@ def match_card(match: BSDMatch) -> rx.Component:
                 _prediction_body(match),
                 _unavailable_body(match),
             ),
+            fudbal91_match_context(match),
             rx.cond(
                 match["has_prediction"],
                 rx.el.button(

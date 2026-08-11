@@ -5,6 +5,7 @@ from app.components.api_status import (
     loading_skeleton,
     warning_banner,
 )
+from app.components.fudbal91_panel import fudbal91_section
 from app.components.match_card import match_card
 from app.components.supplemental_predictions import supplemental_predictions
 from app.states.bsd_state import BSDState
@@ -205,6 +206,7 @@ def bsd_predictions() -> rx.Component:
                 rx.el.div(_empty_state(), class_name="mt-4 w-full"),
             ),
         ),
+        fudbal91_section(),
         supplemental_predictions(),
         class_name="w-full",
     )

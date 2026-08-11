@@ -82,6 +82,7 @@ class AppState(rx.State):
     async def refresh_now(self):
         from app.states.bsd_state import BSDState
         from app.states.comparison_state import ComparisonState
+        from app.states.fudbal91_state import Fudbal91State
         from app.states.markets_state import MarketsState
         from app.states.models_state import ModelsState
         from app.states.mutating_state import MutatingState
@@ -97,6 +98,7 @@ class AppState(rx.State):
         yield MutatingState.refresh
         yield MutatingState.sync_coverage
         yield SportScoreState.refresh
+        yield Fudbal91State.refresh
         yield OverviewState.sync
         yield MarketsState.sync
         yield ComparisonState.sync
@@ -137,6 +139,7 @@ class AppState(rx.State):
 
             from app.states.bsd_state import BSDState
             from app.states.comparison_state import ComparisonState
+            from app.states.fudbal91_state import Fudbal91State
             from app.states.markets_state import MarketsState
             from app.states.models_state import ModelsState
             from app.states.mutating_state import MutatingState
@@ -148,6 +151,10 @@ class AppState(rx.State):
                 yield MutatingState.refresh
             yield MutatingState.sync_coverage
             yield SportScoreState.refresh
+            if light_cycle:
+                yield Fudbal91State.sync
+            else:
+                yield Fudbal91State.refresh
             yield OverviewState.sync
             yield MarketsState.sync
             yield ComparisonState.sync
