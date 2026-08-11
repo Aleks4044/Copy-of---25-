@@ -16,11 +16,13 @@ SOURCE_MIX: list[tuple[str, int]] = [
     ("bzz", 2),
     ("fotmob", 1),
     ("mutating", 1),
+    ("sportscore", 1),
 ]
 SOURCE_MIX_LABELS: dict[str, str] = {
     "bzz": "BZZ API",
     "fotmob": "Fotmob",
     "mutating": "Mutating",
+    "sportscore": "SportScore",
 }
 
 
@@ -157,6 +159,10 @@ class OverviewState(rx.State):
     @rx.var
     def mutating_pick_count(self) -> int:
         return len([p for p in self.picks if p["source"] == "mutating"])
+
+    @rx.var
+    def sportscore_pick_count(self) -> int:
+        return len([p for p in self.picks if p["source"] == "sportscore"])
 
     @rx.var
     def hit_rate(self) -> float:
@@ -309,12 +315,47 @@ class OverviewState(rx.State):
             )
         return picks
 
+    def _sportscore_picks(self, rows: list[dict]) -> list[MatchPick]:
+        """Избори од SportScore само кога има реални статистики и тоа́ за
+        настани непокриени од BZZ/Fotmob/Mutating. Без квоти.
+        """
+        picks: list[MatchPick] = []
+        for row in rows:
+            if row.get("covered") or not row.get("has_prediction"):
+                continue
+            confidence = row.get("meta_confidence") or 0.0
+            if not isinstance(confidence, (int, float)) or confidence <= 0.0:
+                continue
+            picks.append(
+                MatchPick(
+                    id=str(row.get("id") or ""),
+                    kickoff=str(row.get("kickoff") or "--:--"),
+                    league=str(row.get("competition") or "—"),
+                    home=str(row.get("home") or ""),
+                    away=str(row.get("away") or ""),
+                    market=str(
+                        row.get("meta_market")
+                        or "Meta-Ensemble · SportScore статистики"
+                    ),
+                    pick=str(row.get("meta_pick") or ""),
+                    confidence=round(float(confidence), 1),
+                    odds=0.0,
+                    edge=0.0,
+                    status=str(row.get("status") or "upcoming"),
+                    source="sportscore",
+                    source_label="SportScore",
+                    has_odds=False,
+                )
+            )
+        return picks
+
     def _derive(
         self,
         matches: list[BSDMatch],
         generated_at: str,
         mutating_rows: list[dict] | None = None,
         covered: set[str] | None = None,
+        sportscore_rows: list[dict] | None = None,
     ) -> None:
         picks: list[MatchPick] = []
         for match in matches:
@@ -342,6 +383,7 @@ class OverviewState(rx.State):
         picks.extend(
             self._mutating_picks(mutating_rows or [], covered or set())
         )
+        picks.extend(self._sportscore_picks(sportscore_rows or []))
         self.picks = picks
         self.missing_predictions = len(
             [m for m in matches if not m["has_prediction"]]
@@ -441,15 +483,18 @@ class OverviewState(rx.State):
     @rx.event
     async def sync(self):
         from app.states.mutating_state import MutatingState
+        from app.states.sportscore_state import SportScoreState
 
         bsd = await self.get_state(BSDState)
         mutating = await self.get_state(MutatingState)
+        sportscore = await self.get_state(SportScoreState)
         self.error = bsd.error
         self._derive(
             bsd.matches,
             bsd.generated_at,
             [dict(row) for row in mutating.rows],
             set(mutating.covered_keys),
+            [dict(row) for row in sportscore.rows],
         )
 
     @rx.event

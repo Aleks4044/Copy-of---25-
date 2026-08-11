@@ -127,11 +127,32 @@ def _stat_tile(
     )
 
 
+def _ht_chip(match: BSDMatch) -> rx.Component:
+    """Резултат од полувреме кога API-то го обезбедува."""
+    return rx.cond(
+        match["has_ht"],
+        rx.el.span(
+            match["ht_label"],
+            class_name="w-fit whitespace-nowrap rounded-full border border-zinc-700 bg-zinc-800/60 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-300 tabular-nums",
+        ),
+        rx.fragment(),
+    )
+
+
 def _status_pill(match: BSDMatch) -> rx.Component:
     return rx.el.span(
         rx.match(
             match["status"],
-            ("live", rx.el.span(match["minute"])),
+            (
+                "live",
+                rx.el.span(
+                    rx.cond(
+                        match["minute"] != "",
+                        match["minute"],
+                        match["status_text"],
+                    )
+                ),
+            ),
             ("finished", rx.el.span("Завршен")),
             ("cancelled", rx.el.span("Откажан")),
             ("postponed", rx.el.span("Одложен")),
@@ -213,6 +234,7 @@ def _match_header(match: BSDMatch) -> rx.Component:
                     class_name="text-[11px] font-semibold uppercase tracking-wider text-zinc-500",
                 ),
                 _status_pill(match),
+                _ht_chip(match),
                 _source_badge_header(match),
                 class_name="flex flex-wrap items-center gap-2",
             ),

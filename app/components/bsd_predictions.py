@@ -44,6 +44,72 @@ def _sub_nav() -> rx.Component:
     )
 
 
+def _nav_button(
+    label: str, icon: str, handler: rx.event.EventType
+) -> rx.Component:
+    return rx.el.button(
+        rx.icon(icon, class_name="h-3.5 w-3.5 shrink-0"),
+        rx.el.span(label, class_name="whitespace-nowrap"),
+        on_click=handler,
+        class_name="flex shrink-0 items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-2 text-xs font-semibold text-zinc-300 transition-colors hover:border-zinc-700 hover:text-white",
+    )
+
+
+def _date_controls() -> rx.Component:
+    """Календар за BZZ датумот (стандардно локалниот ден во Македонија)."""
+    return rx.el.div(
+        rx.el.div(
+            rx.icon(
+                "calendar-days", class_name="h-4 w-4 shrink-0 text-blue-400"
+            ),
+            rx.el.div(
+                rx.el.span(
+                    "Избран датум",
+                    class_name="text-[10px] font-semibold uppercase tracking-wider text-zinc-500",
+                ),
+                rx.el.input(
+                    type="date",
+                    default_value=BSDState.selected_date_value,
+                    on_change=BSDState.set_selected_date,
+                    class_name="mt-0.5 w-full rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-1 text-xs font-semibold text-zinc-200 outline-hidden transition-colors [color-scheme:dark] hover:border-zinc-700 focus:border-blue-500/50",
+                ),
+                class_name="flex min-w-0 flex-col",
+            ),
+            class_name="flex min-w-0 flex-1 items-center gap-2.5 rounded-xl border border-zinc-800 bg-zinc-900/50 px-3 py-2",
+        ),
+        rx.el.div(
+            _nav_button(
+                "Претходен",
+                "chevron-left",
+                lambda: BSDState.shift_day(-1),
+            ),
+            _nav_button(
+                "Следен", "chevron-right", lambda: BSDState.shift_day(1)
+            ),
+            rx.cond(
+                BSDState.is_today_selected,
+                rx.fragment(),
+                _nav_button("Денес", "calendar-check", BSDState.select_today),
+            ),
+            rx.el.button(
+                rx.icon(
+                    "refresh-cw",
+                    class_name=rx.cond(
+                        BSDState.is_loading,
+                        "h-3.5 w-3.5 animate-spin",
+                        "h-3.5 w-3.5",
+                    ),
+                ),
+                rx.el.span("Вчитај датум", class_name="whitespace-nowrap"),
+                on_click=BSDState.reload_selected,
+                class_name="flex shrink-0 items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-blue-500",
+            ),
+            class_name="flex flex-wrap items-center gap-2",
+        ),
+        class_name="mb-4 flex w-full flex-col gap-2 sm:flex-row sm:items-center",
+    )
+
+
 def _summary_chip(label: str, value: rx.Var | str, icon: str) -> rx.Component:
     return rx.el.div(
         rx.icon(icon, class_name="h-3.5 w-3.5 text-zinc-500"),
@@ -76,7 +142,7 @@ def bsd_predictions() -> rx.Component:
                     class_name="text-xl font-semibold tracking-tight text-white sm:text-2xl",
                 ),
                 rx.el.p(
-                    f"BZZ покриеност: денес и утре ({BSDState.window_label}) · {BSDState.window_count} настани · вчитано во {BSDState.generated_at} · {BSDState.bzz_prediction_count} BZZ · {BSDState.fotmob_prediction_count} Fotmob · {BSDState.missing_prediction_count} без предвидување",
+                    f"BZZ покриеност: избран датум и следниот ден ({BSDState.window_label}) · {BSDState.window_count} настани · вчитано во {BSDState.generated_at} · {BSDState.bzz_prediction_count} BZZ · {BSDState.fotmob_prediction_count} Fotmob · {BSDState.hidden_no_prediction_count} скриени без предвидување",
                     class_name="mt-1 text-sm font-medium text-zinc-500",
                 ),
                 rx.el.p(
@@ -85,6 +151,11 @@ def bsd_predictions() -> rx.Component:
                 ),
                 rx.el.p(
                     f"Подтабот „Претстојни денес“ прикажува само незапочнати натпревари од {BSDState.today_label}; „Утре“ ги прикажува незапочнатите од {BSDState.tomorrow_label}, а Live и Завршени се одделно.",
+                    class_name="mt-1 text-xs font-medium text-zinc-600",
+                ),
+                rx.el.p(
+                    "Натпреварите без реално предвидување (ни од BZZ, ни од "
+                    "Fotmob) не се прикажуваат — само се бројат.",
                     class_name="mt-1 text-xs font-medium text-zinc-600",
                 ),
                 rx.el.p(
@@ -114,6 +185,7 @@ def bsd_predictions() -> rx.Component:
             ),
             class_name="mb-4 flex w-full flex-col gap-3 lg:flex-row lg:items-end lg:justify-between",
         ),
+        _date_controls(),
         error_banner(BSDState.error),
         warning_banner(BSDState.stats_notice),
         _sub_nav(),

@@ -160,6 +160,10 @@ def source_badge(pick: MatchPick) -> rx.Component:
                 "mutating",
                 "w-fit whitespace-nowrap rounded-full border border-zinc-700 bg-zinc-800/60 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-400",
             ),
+            (
+                "sportscore",
+                "w-fit whitespace-nowrap rounded-full border border-amber-500/35 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-300",
+            ),
             "w-fit whitespace-nowrap rounded-full border border-emerald-500/35 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-300",
         ),
     )
@@ -251,8 +255,9 @@ def top_picks() -> rx.Component:
                     class_name="text-[11px] font-semibold text-zinc-300",
                 ),
                 rx.el.span(
-                    "Изворите се мешаат наизменично (BZZ → Fotmob → Mutating), "
-                    "а внатре во секој извор редот е по реална сигурност.",
+                    "Изворите се мешаат наизменично (BZZ → Fotmob → Mutating → "
+                    "SportScore), а внатре во секој извор редот е по реална "
+                    "сигурност.",
                     class_name="mt-0.5 text-[11px] font-medium text-zinc-500",
                 ),
                 class_name="flex min-w-0 flex-col",
@@ -417,7 +422,7 @@ def overview() -> rx.Component:
                     class_name="text-xl font-semibold tracking-tight text-white sm:text-2xl",
                 ),
                 rx.el.p(
-                    f"Вчитано во {OverviewState.generated_at} · BZZ покриеност: денес и утре · {OverviewState.total_picks} избори · {OverviewState.bzz_pick_count} BZZ · {OverviewState.fotmob_pick_count} Fotmob · {OverviewState.mutating_pick_count} Mutating · {OverviewState.missing_predictions} настани без предвидување",
+                    f"Вчитано во {OverviewState.generated_at} · BZZ покриеност: избран датум и следниот ден · {OverviewState.total_picks} избори · {OverviewState.bzz_pick_count} BZZ · {OverviewState.fotmob_pick_count} Fotmob · {OverviewState.mutating_pick_count} Mutating · {OverviewState.sportscore_pick_count} SportScore · {OverviewState.missing_predictions} настани без предвидување",
                     class_name="mt-1 max-w-3xl text-sm font-medium text-zinc-500",
                 ),
                 class_name="flex flex-col",
@@ -451,7 +456,7 @@ def overview() -> rx.Component:
             rx.el.div(
                 section_card(
                     "Најсигурни избори",
-                    "Наизменично мешани извори: BZZ, Fotmob и Mutating",
+                    "Наизменично мешани извори: BZZ, Fotmob, Mutating и SportScore",
                     "star",
                     top_picks(),
                 ),

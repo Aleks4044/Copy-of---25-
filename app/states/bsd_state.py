@@ -190,7 +190,12 @@ class BSDMatch(TypedDict):
     home_logo_url: str
     away_logo_url: str
     status: str
+    status_text: str
     minute: str
+    has_ht: bool
+    ht_home: int
+    ht_away: int
+    ht_label: str
     score: str
     venue: str
     form_home: str
@@ -720,17 +725,27 @@ def _kickoff_label(raw: str) -> str:
     return _to_local(parsed).strftime("%H:%M")
 
 
-def _day_label(raw: str) -> str:
+def _as_date(value: str) -> date:
+    """Избраниот датум од интерфејсот; локалниот ден кога нема вредност."""
+    if isinstance(value, str) and len(value) >= 10:
+        try:
+            return date.fromisoformat(value[:10])
+        except ValueError:
+            return local_today()
+    return local_today()
+
+
+def _day_label(raw: str, start: date) -> str:
+    """Ознака на денот во однос на избраниот датум (не на системскиот ден)."""
     local = _local_date(raw)
     if local is None:
         return ""
     today = local_today()
-    if local == today:
-        return "Денес"
-    if local == today + timedelta(days=1):
-        return "Утре"
-    if local == today - timedelta(days=1):
-        return "Вчера"
+    if local == start:
+        return "Денес" if start == today else start.strftime("%d.%m")
+    if local == start + timedelta(days=1):
+        following = start + timedelta(days=1)
+        return "Утре" if start == today else following.strftime("%d.%m")
     return local.strftime("%d.%m")
 
 
@@ -748,19 +763,84 @@ def _sort_key(raw: str) -> str:
         return raw
 
 
-def _date_window() -> tuple[str, str]:
-    """UTC прозорец што го покрива локалниот ден „денес и утре“.
+def _date_window(start: date) -> tuple[str, str]:
+    """UTC прозорец што го покрива избраниот ден и следниот ден.
 
     Локалниот ден во Скопје (UTC+2/+3) започнува претходниот UTC ден, па
-    прозорецот е [денес-1, утре]; редовите потоа се филтрираат по локален
-    датум, така што доцните ноќни часови не прикажуваат погрешен ден, а
-    утрешните натпревари се вчитуваат целосно.
+    прозорецот е [избран-1, избран+1]; редовите потоа се филтрираат по
+    локален датум, така што доцните ноќни часови не прикажуваат погрешен
+    ден, а настаните од следниот ден се вчитуваат целосно.
     """
-    today = local_today()
     return (
-        (today - timedelta(days=1)).isoformat(),
-        (today + timedelta(days=1)).isoformat(),
+        (start - timedelta(days=1)).isoformat(),
+        (start + timedelta(days=1)).isoformat(),
     )
+
+
+def _ht_from_event(event: dict) -> tuple[int, int, bool]:
+    """Резултат од првото полувреме, ако API-то го обезбедува."""
+    pairs = (
+        ("home_score_ht", "away_score_ht"),
+        ("ht_home_score", "ht_away_score"),
+        ("home_ht_score", "away_ht_score"),
+        ("home_score_half_time", "away_score_half_time"),
+        ("home_score_period_1", "away_score_period_1"),
+        ("home_score_p1", "away_score_p1"),
+    )
+    for home_key, away_key in pairs:
+        home = _num(event.get(home_key))
+        away = _num(event.get(away_key))
+        if home is not None and away is not None:
+            return int(round(home)), int(round(away)), True
+    for key in ("periods", "scores", "period_scores", "score_periods"):
+        block = event.get(key)
+        if not isinstance(block, dict):
+            continue
+        for inner in (
+            "ht",
+            "halftime",
+            "half_time",
+            "first_half",
+            "period_1",
+            "1",
+        ):
+            sub = block.get(inner)
+            if not isinstance(sub, dict):
+                continue
+            home = _num(sub.get("home"))
+            if home is None:
+                home = _num(sub.get("home_score"))
+            away = _num(sub.get("away"))
+            if away is None:
+                away = _num(sub.get("away_score"))
+            if home is not None and away is not None:
+                return int(round(home)), int(round(away)), True
+    return 0, 0, False
+
+
+STATUS_TEXTS: dict[str, str] = {
+    "live": "Во тек",
+    "finished": "Завршен",
+    "cancelled": "Откажан",
+    "postponed": "Одложен",
+    "upcoming": "Претстоен",
+}
+
+
+def _status_text(event: dict, status: str) -> str:
+    """Читлив текст за статусот: минута кога е во тек, инаку ознака."""
+    minute = event.get("current_minute")
+    raw = ""
+    for key in ("status_text", "status_description", "status_more", "status"):
+        value = event.get(key)
+        if isinstance(value, str) and value.strip():
+            raw = value.strip()
+            break
+    if status == "live":
+        if minute:
+            return f"{minute}'"
+        return raw or STATUS_TEXTS["live"]
+    return STATUS_TEXTS.get(status, raw)
 
 
 def _score_label(event: dict, status: str) -> str:
@@ -951,22 +1031,25 @@ def _xg_from_stats(stats: dict) -> tuple[float | None, float | None]:
     return read(home), read(away)
 
 
-def _empty_match(event: dict, league: str, status: str) -> BSDMatch:
+def _empty_match(
+    event: dict, league: str, status: str, start: date
+) -> BSDMatch:
     home = str(event.get("home_team") or NA_LABEL)
     away = str(event.get("away_team") or NA_LABEL)
     minute = event.get("current_minute")
     home_team_id = _team_id_from(event, "home")
     away_team_id = _team_id_from(event, "away")
+    ht_home, ht_away, has_ht = _ht_from_event(event)
     return BSDMatch(
         id=f"event-{event.get('id')}",
         event_id=int(event.get("id") or 0),
         has_xg=bool(event.get("has_xg")),
         kickoff=_kickoff_label(event.get("event_date") or ""),
         sort_key=_sort_key(event.get("event_date") or ""),
-        date_key=(
-            _local_date(event.get("event_date") or "") or local_today()
-        ).strftime("%Y%m%d"),
-        day_label=_day_label(event.get("event_date") or ""),
+        date_key=(_local_date(event.get("event_date") or "") or start).strftime(
+            "%Y%m%d"
+        ),
+        day_label=_day_label(event.get("event_date") or "", start),
         source="",
         source_label="",
         fotmob_id=0,
@@ -979,7 +1062,12 @@ def _empty_match(event: dict, league: str, status: str) -> BSDMatch:
         home_logo_url=_team_logo_url(home_team_id),
         away_logo_url=_team_logo_url(away_team_id),
         status=status,
+        status_text=_status_text(event, status),
         minute=f"{minute}'" if minute else "",
+        has_ht=has_ht,
+        ht_home=ht_home,
+        ht_away=ht_away,
+        ht_label=f"HT: {ht_home}-{ht_away}" if has_ht else "",
         score=_score_label(event, status),
         venue=_venue_label(event),
         form_home="",
@@ -1300,24 +1388,25 @@ def _fetch_paginated(
     return rows, status
 
 
-def _is_today(event: dict) -> bool:
-    """Дали настанот се игра во локалниот (Скопје) денешен ден."""
+def _is_selected_day(event: dict, start: date) -> bool:
+    """Дали настанот се игра во избраниот локален ден."""
     local = _local_date(event.get("event_date") or "")
-    return local is not None and local == local_today()
+    return local is not None and local == start
 
 
-def _in_window(event: dict) -> bool:
-    """Дали настанот е во локалниот прозорец „денес и утре“."""
+def _in_window(event: dict, start: date) -> bool:
+    """Дали настанот е во прозорецот „избран ден и следниот ден“."""
     local = _local_date(event.get("event_date") or "")
     if local is None:
         return False
-    today = local_today()
-    return today <= local <= today + timedelta(days=1)
+    return start <= local <= start + timedelta(days=1)
 
 
-def _fetch_status_segment(status_filter: str) -> tuple[list[dict], int]:
-    """Сите страници од /events/ со status филтер за денес и утре."""
-    date_from, date_to = _date_window()
+def _fetch_status_segment(
+    status_filter: str, start: date
+) -> tuple[list[dict], int]:
+    """Сите страници од /events/ со status филтер за избраниот прозорец."""
+    date_from, date_to = _date_window(start)
     return _fetch_paginated(
         "/events/",
         {
@@ -1340,8 +1429,8 @@ def _fetch_live_segment() -> tuple[list[dict], int]:
     )
 
 
-def _fetch_events() -> tuple[list[dict], int, list[str]]:
-    """Ги вчитува настаните од „денес и утре“ преку три барања.
+def _fetch_events(start: date) -> tuple[list[dict], int, list[str]]:
+    """Ги вчитува настаните од избраниот ден и следниот ден преку три барања.
 
     1) /events/?status=upcoming&date_from=…&date_to=… (претстојни денес и утре)
     2) /events/?status=finished&date_from=…&date_to=… (завршени во прозорецот)
@@ -1367,7 +1456,7 @@ def _fetch_events() -> tuple[list[dict], int, list[str]]:
         if is_live:
             segment_rows, status = _fetch_live_segment()
         else:
-            segment_rows, status = _fetch_status_segment(key)
+            segment_rows, status = _fetch_status_segment(key, start)
         last_status = status or last_status
         if status == api_client.RATE_LIMIT_STATUS:
             skipped.append(SEGMENT_LABELS[key])
@@ -1378,13 +1467,14 @@ def _fetch_events() -> tuple[list[dict], int, list[str]]:
             if event_id is None:
                 continue
             if is_live:
-                # Live ресурсот не носи датумски филтер — задржи само денес.
-                if not _is_today(event):
+                # Live ресурсот не носи датумски филтер — задржи го само
+                # избраниот ден.
+                if not _is_selected_day(event, start):
                     continue
                 if _normalize_status(event.get("status") or "") != "finished":
                     event = dict(event)
                     event["status"] = "inprogress"
-            elif not _in_window(event):
+            elif not _in_window(event, start):
                 continue
             numeric_id = int(event_id)
             if numeric_id in seen_ids:
@@ -1400,8 +1490,10 @@ def _fetch_event_prediction(event_id: int) -> tuple[dict, int]:
     return api_client.get_optional_dict(f"/events/{event_id}/prediction/")
 
 
-def _fetch_predictions() -> tuple[dict[int, dict], dict[int, str], int]:
-    date_from, date_to = _date_window()
+def _fetch_predictions(
+    start: date,
+) -> tuple[dict[int, dict], dict[int, str], int]:
+    date_from, date_to = _date_window(start)
     rows, status = _fetch_paginated(
         "/predictions/",
         {"date_from": date_from, "date_to": date_to},
@@ -1437,12 +1529,13 @@ class ApiSnapshot(TypedDict):
     rate_limited: bool
 
 
-def collect_matches() -> ApiSnapshot:
+def collect_matches(start: date | None = None) -> ApiSnapshot:
     """Ги собира вистинските натпревари, предвидувања и обогатувања.
 
     Никогаш не крева исклучок за очекувани 429/404 одговори: натпреварите
     остануваат реални, а полињата од предвидувања остануваат недостапни.
     """
+    start = start or local_today()
     if not api_client.has_api_key():
         return ApiSnapshot(
             matches=[],
@@ -1452,8 +1545,8 @@ def collect_matches() -> ApiSnapshot:
             rate_limited=False,
         )
 
-    events, events_status, skipped_segments = _fetch_events()
-    predictions, league_names, predictions_status = _fetch_predictions()
+    events, events_status, skipped_segments = _fetch_events(start)
+    predictions, league_names, predictions_status = _fetch_predictions(start)
     rate_limited = bool(skipped_segments) or (
         api_client.RATE_LIMIT_STATUS
         in (
@@ -1468,7 +1561,7 @@ def collect_matches() -> ApiSnapshot:
             continue
         status = _normalize_status(event.get("status") or "")
         league = _league_label(event, league_names)
-        match = _empty_match(event, league, status)
+        match = _empty_match(event, league, status, start)
         if predictions_status == api_client.MISSING_KEY_STATUS:
             match["prediction_note"] = MISSING_KEY_NOTE
         elif predictions_status == api_client.RATE_LIMIT_STATUS:
@@ -1593,7 +1686,7 @@ def collect_matches() -> ApiSnapshot:
         error = (
             EVENTS_RATE_LIMIT_ERROR
             if skipped_segments or events_status == api_client.RATE_LIMIT_STATUS
-            else "API-то не врати натпревари за денес."
+            else "API-то не врати натпревари за избраниот датум."
         )
 
     return ApiSnapshot(
@@ -1608,6 +1701,7 @@ def collect_matches() -> ApiSnapshot:
 class BSDState(rx.State):
     """Состојба со вистински податоци од API-то и подтабови."""
 
+    selected_date: str = ""
     sub_tab: str = "today"
     matches: list[BSDMatch] = []
     fotmob_shadows: list[ShadowPick] = []
@@ -1621,28 +1715,44 @@ class BSDState(rx.State):
     rate_limited: bool = False
 
     @rx.var
+    def selected_date_value(self) -> str:
+        """Избраниот датум (ISO); стандардно локалниот ден во Македонија."""
+        return self.selected_date or local_today().isoformat()
+
+    @rx.var
+    def is_today_selected(self) -> bool:
+        return _as_date(self.selected_date_value) == local_today()
+
+    @rx.var
     def today_label(self) -> str:
-        """Локалниот (Скопје) денешен датум за кој се вчитани натпреварите."""
-        return local_today().strftime("%d.%m.%Y")
+        """Избраниот датум за кој се вчитани натпреварите."""
+        return _as_date(self.selected_date_value).strftime("%d.%m.%Y")
 
     @rx.var
     def tomorrow_label(self) -> str:
-        """Локалниот (Скопје) утрешен датум од прозорецот на вчитување."""
-        return (local_today() + timedelta(days=1)).strftime("%d.%m.%Y")
+        """Датумот по избраниот (избран + 1 ден)."""
+        return (
+            _as_date(self.selected_date_value) + timedelta(days=1)
+        ).strftime("%d.%m.%Y")
 
     @rx.var
     def window_label(self) -> str:
-        """Кратка ознака за прозорецот „денес и утре“."""
-        today = local_today()
+        """Кратка ознака за прозорецот „избран ден и следниот ден“."""
+        start = _as_date(self.selected_date_value)
         return (
-            f"{today.strftime('%d.%m')} — "
-            f"{(today + timedelta(days=1)).strftime('%d.%m')}"
+            f"{start.strftime('%d.%m')} — "
+            f"{(start + timedelta(days=1)).strftime('%d.%m')}"
         )
 
     @rx.var
     def all_window_matches(self) -> list[BSDMatch]:
-        """Сите реални настани од прозорецот денес+утре, по почеток."""
+        """Сите реални настани од избраниот прозорец, по почеток."""
         return sorted(self.matches, key=lambda m: m["sort_key"])
+
+    @rx.var
+    def displayed_matches(self) -> list[BSDMatch]:
+        """Само настани со реално предвидување — останатите се скриени."""
+        return [m for m in self.all_window_matches if m["has_prediction"]]
 
     @rx.var
     def window_count(self) -> int:
@@ -1650,25 +1760,28 @@ class BSDState(rx.State):
 
     @rx.var
     def today_matches(self) -> list[BSDMatch]:
-        """Само претстојни (незапочнати) настани од денешниот локален ден.
+        """Претстојни (незапочнати) настани од избраниот ден со предвидување.
 
-        Настаните во тек, завршените, откажаните, одложените и утрешните се
-        исклучени — Live, Завршени и Утре имаат свои подтабови.
+        Настаните во тек, завршените, откажаните, одложените и оние од
+        следниот ден се исклучени — тие имаат свои подтабови. Настаните без
+        реално предвидување воопшто не се прикажуваат.
         """
-        key = local_today().strftime("%Y%m%d")
+        key = _as_date(self.selected_date_value).strftime("%Y%m%d")
         return [
             m
-            for m in self.all_window_matches
+            for m in self.displayed_matches
             if m["status"] == "upcoming" and m["date_key"] == key
         ]
 
     @rx.var
     def tomorrow_matches(self) -> list[BSDMatch]:
-        """Претстојни (незапочнати) настани од утрешниот локален ден."""
-        key = (local_today() + timedelta(days=1)).strftime("%Y%m%d")
+        """Претстојни настани од денот по избраниот, со предвидување."""
+        key = (_as_date(self.selected_date_value) + timedelta(days=1)).strftime(
+            "%Y%m%d"
+        )
         return [
             m
-            for m in self.all_window_matches
+            for m in self.displayed_matches
             if m["status"] == "upcoming" and m["date_key"] == key
         ]
 
@@ -1686,15 +1799,18 @@ class BSDState(rx.State):
 
     @rx.var
     def live_count(self) -> int:
-        return len(
-            [m for m in self.all_window_matches if m["status"] == "live"]
-        )
+        return len([m for m in self.displayed_matches if m["status"] == "live"])
 
     @rx.var
     def finished_count(self) -> int:
         return len(
-            [m for m in self.all_window_matches if m["status"] == "finished"]
+            [m for m in self.displayed_matches if m["status"] == "finished"]
         )
+
+    @rx.var
+    def hidden_no_prediction_count(self) -> int:
+        """Реални настани без предвидување што се скриени од приказот."""
+        return len([m for m in self.matches if not m["has_prediction"]])
 
     @rx.var
     def excluded_count(self) -> int:
@@ -1710,7 +1826,8 @@ class BSDState(rx.State):
     @rx.var
     def today_breakdown_label(self) -> str:
         return (
-            f"{self.upcoming_count} претстојни денес · "
+            f"{self.hidden_no_prediction_count} скриени без предвидување · "
+            f"{self.upcoming_count} претстојни на избраниот датум · "
             f"{self.tomorrow_count} претстојни утре · "
             f"{self.live_count} во тек · {self.finished_count} завршени · "
             f"{self.excluded_count} одложени/откажани"
@@ -1752,10 +1869,10 @@ class BSDState(rx.State):
         со денешните претстојни натпревари.
         """
         if self.sub_tab == "live":
-            return [m for m in self.all_window_matches if m["status"] == "live"]
+            return [m for m in self.displayed_matches if m["status"] == "live"]
         if self.sub_tab == "finished":
             return [
-                m for m in self.all_window_matches if m["status"] == "finished"
+                m for m in self.displayed_matches if m["status"] == "finished"
             ]
         if self.sub_tab == "tomorrow":
             return self.tomorrow_matches
@@ -1785,10 +1902,10 @@ class BSDState(rx.State):
     @rx.var
     def empty_label(self) -> str:
         return {
-            "today": "Нема претстојни натпревари за денешниот ден",
-            "tomorrow": "Нема претстојни натпревари за утре",
-            "live": "Во моментот нема натпревари во тек",
-            "finished": "Нема завршени натпревари",
+            "today": "Нема претстојни натпревари со предвидување за избраниот датум",
+            "tomorrow": "Нема претстојни натпревари со предвидување за следниот ден",
+            "live": "Во моментот нема натпревари во тек со предвидување",
+            "finished": "Нема завршени натпревари со предвидување",
         }.get(self.sub_tab, "Нема податоци")
 
     async def _load_from_api(self):
@@ -1797,7 +1914,9 @@ class BSDState(rx.State):
         try:
             from app.states import fotmob_fallback
 
-            snapshot = await asyncio.to_thread(collect_matches)
+            snapshot = await asyncio.to_thread(
+                collect_matches, _as_date(self.selected_date_value)
+            )
             self.rate_limited = snapshot["rate_limited"]
             rows = snapshot["matches"]
             fotmob_note = ""
@@ -1859,6 +1978,75 @@ class BSDState(rx.State):
         yield
         await self._load_from_api()
         yield
+
+    def _sync_events(self):
+        """Ги враќа настаните за синхронизација на зависните состојби."""
+        from app.states.comparison_state import ComparisonState
+        from app.states.markets_state import MarketsState
+        from app.states.models_state import ModelsState
+        from app.states.mutating_state import MutatingState
+        from app.states.overview_state import OverviewState
+
+        return [
+            MutatingState.sync_coverage,
+            OverviewState.sync,
+            MarketsState.sync,
+            ComparisonState.sync,
+            ModelsState.sync,
+        ]
+
+    @rx.event
+    async def reload_selected(self):
+        """Повторно вчитување за тековно избраниот датум."""
+        if self.is_loading:
+            return
+        yield
+        await self._load_from_api()
+        yield
+        for event in self._sync_events():
+            yield event
+
+    @rx.event
+    async def set_selected_date(self, value: str):
+        cleaned = (value or "").strip()[:10]
+        try:
+            date.fromisoformat(cleaned)
+        except ValueError:
+            return
+        self.selected_date = cleaned
+        self.sub_tab = "today"
+        self.expanded_id = ""
+        yield
+        await self._load_from_api()
+        yield
+        for event in self._sync_events():
+            yield event
+
+    @rx.event
+    async def shift_day(self, offset: int):
+        target = _as_date(self.selected_date_value) + timedelta(days=offset)
+        self.selected_date = target.isoformat()
+        self.sub_tab = "today"
+        self.expanded_id = ""
+        yield
+        await self._load_from_api()
+        yield
+        for event in self._sync_events():
+            yield event
+
+    @rx.event
+    async def select_today(self):
+        today = local_today().isoformat()
+        if self.selected_date == today:
+            return
+        self.selected_date = today
+        self.sub_tab = "today"
+        self.expanded_id = ""
+        yield
+        await self._load_from_api()
+        yield
+        for event in self._sync_events():
+            yield event
 
     @rx.event
     def set_sub_tab(self, tab: str):

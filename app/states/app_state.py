@@ -71,14 +71,17 @@ class AppState(rx.State):
         from app.states.models_state import ModelsState
         from app.states.mutating_state import MutatingState
         from app.states.overview_state import OverviewState
+        from app.states.sportscore_state import SportScoreState
 
         self.is_refreshing = True
         self.seconds_until_refresh = self.refresh_interval
         yield
-        # Прво BZZ/Fotmob, потоа Mutating покриеноста, и на крај агрегатите.
+        # Прво BZZ/Fotmob (за тековно избраниот датум), потоа Mutating
+        # покриеноста и SportScore, и на крај агрегатите.
         yield BSDState.refresh_data
         yield MutatingState.refresh
         yield MutatingState.sync_coverage
+        yield SportScoreState.refresh
         yield OverviewState.sync
         yield MarketsState.sync
         yield ComparisonState.sync
@@ -116,10 +119,12 @@ class AppState(rx.State):
             from app.states.models_state import ModelsState
             from app.states.mutating_state import MutatingState
             from app.states.overview_state import OverviewState
+            from app.states.sportscore_state import SportScoreState
 
             yield BSDState.refresh_data
             yield MutatingState.refresh
             yield MutatingState.sync_coverage
+            yield SportScoreState.refresh
             yield OverviewState.sync
             yield MarketsState.sync
             yield ComparisonState.sync
