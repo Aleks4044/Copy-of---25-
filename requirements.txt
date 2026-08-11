@@ -1,0 +1,7 @@
+
+reflex[db]==0.9.6.post2
+requests
+fotmob-api
+pydantic>=2.0
+fotmob-wrapper
+beautifulsoup4
