@@ -24,8 +24,12 @@ def _header() -> rx.Component:
                 class_name="text-xl font-semibold tracking-tight text-white sm:text-2xl",
             ),
             rx.el.p(
-                f"Вчитано во {MarketsState.generated_at} · {MarketsState.combos_per_match} комбинации по натпревар, пресметани само од реални API веројатности · {MarketsState.missing_predictions} настани без предвидување",
+                f"Вчитано во {MarketsState.generated_at} · {MarketsState.combos_per_match} комбинации по BZZ/Fotmob натпревар, пресметани само од реални веројатности · {MarketsState.missing_predictions} настани без предвидување",
                 class_name="mt-1 max-w-3xl text-sm font-medium text-zinc-500",
+            ),
+            rx.el.p(
+                f"Извори: {MarketsState.sources_label} · Mutating и SportScore не објавуваат квоти, па квотата и предноста стојат како „недостапно“ и не се измислуваат",
+                class_name="mt-1 max-w-3xl text-xs font-medium text-zinc-600",
             ),
             class_name="flex min-w-0 flex-col",
         ),
@@ -332,7 +336,11 @@ def _market_row(row: MarketRow) -> rx.Component:
                         class_name="truncate text-[10px] font-medium text-zinc-600",
                     ),
                     _status_dot(row),
-                    class_name="mt-0.5 flex items-center gap-2",
+                    rx.el.span(
+                        row["source_label"],
+                        class_name="w-fit whitespace-nowrap rounded-full border border-zinc-700 bg-zinc-800/60 px-2 py-0.5 text-[10px] font-semibold text-zinc-400",
+                    ),
+                    class_name="mt-0.5 flex flex-wrap items-center gap-2",
                 ),
                 class_name="flex min-w-0 flex-col",
             ),
@@ -364,16 +372,33 @@ def _market_row(row: MarketRow) -> rx.Component:
             class_name="px-3 py-2.5",
         ),
         rx.el.td(
-            f"{row['odds']:.2f}",
-            class_name="hidden px-3 py-2.5 text-right text-sm text-zinc-300 tabular-nums md:table-cell",
+            rx.cond(
+                row["has_odds"],
+                rx.el.span(
+                    f"{row['odds']:.2f}",
+                    class_name="text-sm text-zinc-300 tabular-nums",
+                ),
+                rx.el.span(
+                    "недостапно",
+                    class_name="text-[10px] font-medium text-zinc-600",
+                ),
+            ),
+            class_name="hidden px-3 py-2.5 text-right md:table-cell",
         ),
         rx.el.td(
-            rx.el.span(
-                f"{row['edge']:.2f} п.п.",
-                class_name=rx.cond(
-                    row["edge"] >= 0.0,
-                    "w-fit whitespace-nowrap rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-xs font-semibold text-emerald-300 tabular-nums",
-                    "w-fit whitespace-nowrap rounded-full border border-zinc-700 bg-zinc-800/60 px-2 py-0.5 text-xs font-semibold text-zinc-400 tabular-nums",
+            rx.cond(
+                row["has_odds"],
+                rx.el.span(
+                    f"{row['edge']:.2f} п.п.",
+                    class_name=rx.cond(
+                        row["edge"] >= 0.0,
+                        "w-fit whitespace-nowrap rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-xs font-semibold text-emerald-300 tabular-nums",
+                        "w-fit whitespace-nowrap rounded-full border border-zinc-700 bg-zinc-800/60 px-2 py-0.5 text-xs font-semibold text-zinc-400 tabular-nums",
+                    ),
+                ),
+                rx.el.span(
+                    "недостапно",
+                    class_name="text-[10px] font-medium text-zinc-600",
                 ),
             ),
             class_name="hidden px-3 py-2.5 text-right lg:table-cell",
@@ -400,7 +425,7 @@ def _markets_table() -> rx.Component:
                     class_name="text-sm font-semibold tracking-tight text-white",
                 ),
                 rx.el.p(
-                    f"Прикажани {MarketsState.visible_count} од {MarketsState.filtered_count} филтрирани маркети",
+                    f"Прикажани {MarketsState.visible_count} од {MarketsState.filtered_count} филтрирани маркети · {MarketsState.without_odds_count} без објавена квота",
                     class_name="text-xs font-medium text-zinc-500",
                 ),
                 class_name="flex min-w-0 flex-col",
@@ -562,7 +587,9 @@ def markets_view() -> rx.Component:
                 class_name="w-full",
             ),
             unavailable_note(
-                "API-то не врати предвидувања, па комбинираните маркети не можат да се пресметаат"
+                "Ниту еден извор (BZZ, Fotmob, Mutating, SportScore) не врати "
+                "реални веројатности, па комбинираните маркети не можат да се "
+                "пресметаат"
             ),
         ),
         class_name="w-full",

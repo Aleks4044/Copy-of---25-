@@ -1,14 +1,23 @@
 """Почетна статистика изведена исклучиво од вистински API податоци."""
 
-from datetime import datetime
 from typing import TypedDict
 
 import reflex as rx
 
-from app.states.bsd_state import BSDMatch, BSDState
+from app.states.bsd_state import BSDMatch, BSDState, local_clock
 
 
 PICKS_LIMITS: dict[str, int] = {"top5": 5, "top10": 10, "top15": 15}
+
+# Секој приказ добива свој (различен) мешан избор: ротација на редот на
+# изворите и офсет во рамките на секој извор, така што „Топ 10“ не е само
+# „Топ 5“ плус пет нови редови. Се користат само реални избори и реални
+# сигурности од самите извори — ништо не се измислува.
+PICKS_VIEWS: dict[str, dict[str, int]] = {
+    "top5": {"limit": 5, "rotation": 0, "offset": 0},
+    "top10": {"limit": 10, "rotation": 1, "offset": 1},
+    "top15": {"limit": 15, "rotation": 2, "offset": 2},
+}
 
 # Тежинско наизменично мешање по извор: во секој круг се земаат до толку
 # избори од секој извор, а внатре во изворот редот е по реална сигурност.
@@ -176,39 +185,59 @@ class OverviewState(rx.State):
             return 0.0
         return round(self.profit / self.settled_bets * 100, 2)
 
-    @rx.var
-    def mixed_picks(self) -> list[MatchPick]:
+    def _rotate(self, rows: list[MatchPick], offset: int) -> list[MatchPick]:
+        if not rows or offset <= 0:
+            return rows
+        shift = offset % len(rows)
+        return rows[shift:] + rows[:shift]
+
+    def _mix(self, rotation: int, offset: int) -> list[MatchPick]:
         """Наизменично (тежинско round-robin) мешање по извор.
 
-        Внатре во секој извор редот останува по реална сигурност од самиот
-        извор (најсилно прво). Ако некој извор нема редови, кругот
-        продолжува да се полни од останатите — не се измислуваат вредности.
+        `rotation` ротира кој извор започнува кругот, а `offset` ротира
+        редот на изборите во рамките на секој извор. Внатре во изворот
+        основниот ред е по реална сигурност (најсилно прво). Ако некој
+        извор нема редови, кругот продолжува од останатите — не се
+        измислуваат вредности.
         """
         buckets: dict[str, list[MatchPick]] = {}
         for source, _weight in SOURCE_MIX:
-            buckets[source] = sorted(
-                [p for p in self.picks if p["source"] == source],
-                key=lambda p: -p["confidence"],
+            buckets[source] = self._rotate(
+                sorted(
+                    [p for p in self.picks if p["source"] == source],
+                    key=lambda p: -p["confidence"],
+                ),
+                offset,
             )
+        turn = rotation % len(SOURCE_MIX) if SOURCE_MIX else 0
+        order = SOURCE_MIX[turn:] + SOURCE_MIX[:turn]
         ordered: list[MatchPick] = []
-        while any(buckets[source] for source, _weight in SOURCE_MIX):
-            for source, weight in SOURCE_MIX:
+        while any(buckets[source] for source, _weight in order):
+            for source, weight in order:
                 bucket = buckets[source]
                 for _ in range(weight):
                     if not bucket:
                         break
                     ordered.append(bucket.pop(0))
         known = {source for source, _weight in SOURCE_MIX}
-        rest = sorted(
-            [p for p in self.picks if p["source"] not in known],
-            key=lambda p: -p["confidence"],
+        rest = self._rotate(
+            sorted(
+                [p for p in self.picks if p["source"] not in known],
+                key=lambda p: -p["confidence"],
+            ),
+            offset,
         )
         return ordered + rest
 
     @rx.var
+    def mixed_picks(self) -> list[MatchPick]:
+        return self._mix(0, 0)
+
+    @rx.var
     def top_picks(self) -> list[MatchPick]:
-        limit = PICKS_LIMITS.get(self.picks_view, 5)
-        return self.mixed_picks[:limit]
+        view = PICKS_VIEWS.get(self.picks_view, PICKS_VIEWS["top5"])
+        rows = self._mix(view["rotation"], view["offset"])
+        return rows[: view["limit"]]
 
     @rx.var
     def top_picks_mix_label(self) -> str:
@@ -478,7 +507,7 @@ class OverviewState(rx.State):
                 )
             )
         self.league_rows = sorted(rows, key=lambda r: -r["matches"])[:8]
-        self.generated_at = generated_at or datetime.now().strftime("%H:%M:%S")
+        self.generated_at = generated_at or local_clock()
 
     @rx.event
     async def sync(self):

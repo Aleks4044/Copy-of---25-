@@ -1,8 +1,9 @@
 import random
-from datetime import datetime
 from typing import TypedDict
 
 import reflex as rx
+
+from app.states.bsd_state import local_clock
 
 
 class ModelRow(TypedDict):
@@ -358,7 +359,7 @@ class ModelsState(rx.State):
             "sample": float(random.randint(2600, 4200)),
         }
         self.backtest = self._build_backtest(meta_accuracy, best)
-        self.generated_at = datetime.now().strftime("%H:%M:%S")
+        self.generated_at = local_clock()
 
     @rx.event
     async def load(self):

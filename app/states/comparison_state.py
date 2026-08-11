@@ -5,12 +5,16 @@
 да се совпадне, редот воопшто не се создава.
 """
 
-from datetime import datetime
 from typing import TypedDict
 
 import reflex as rx
 
-from app.states.bsd_state import BSDMatch, BSDState, ShadowPick
+from app.states.bsd_state import (
+    BSDMatch,
+    BSDState,
+    ShadowPick,
+    local_clock,
+)
 
 
 class ComparisonRow(TypedDict):
@@ -128,7 +132,7 @@ class ComparisonState(rx.State):
                 )
             )
         self.rows_cache = rows
-        self.generated_at = generated_at or datetime.now().strftime("%H:%M:%S")
+        self.generated_at = generated_at or local_clock()
 
     @rx.var
     def filtered_rows(self) -> list[ComparisonRow]:

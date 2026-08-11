@@ -15,13 +15,13 @@ import asyncio
 import html
 import logging
 import re
-from datetime import datetime
 from typing import TypedDict
 
 import reflex as rx
 import requests
 
 from app.states import mutating_scrape
+from app.states.bsd_state import local_clock, local_now
 
 ENDPOINT = "https://www.mutating.com/updatepredictions/"
 TIMEOUT = 8
@@ -452,7 +452,7 @@ class MutatingState(rx.State):
 
     @rx.var
     def today_label(self) -> str:
-        return datetime.now().strftime("%d.%m.%Y")
+        return local_now().strftime("%d.%m.%Y")
 
     @rx.var
     def total_count(self) -> int:
@@ -602,7 +602,7 @@ class MutatingState(rx.State):
             return
         rows.sort(key=_sort_key)
         self.rows = rows
-        self.fetched_at = datetime.now().strftime("%H:%M:%S")
+        self.fetched_at = local_clock()
         self.error = ""
         self.has_loaded = True
         self.is_loading = False
@@ -621,7 +621,7 @@ class MutatingState(rx.State):
                     keys.append(key)
         self.covered_keys = keys
         self.coverage_source_count = len(bsd.matches)
-        self.coverage_synced_at = datetime.now().strftime("%H:%M:%S")
+        self.coverage_synced_at = local_clock()
 
     @rx.event
     async def load(self):

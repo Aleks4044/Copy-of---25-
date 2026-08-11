@@ -44,6 +44,11 @@ def local_today() -> date:
     return local_now().date()
 
 
+def local_clock() -> str:
+    """Тековен час според локалната зона (Europe/Skopje), не според серверот."""
+    return local_now().strftime("%H:%M:%S")
+
+
 def _parse_moment(raw: str) -> datetime | None:
     if not isinstance(raw, str) or len(raw) < 10:
         return None
@@ -1539,7 +1544,7 @@ def collect_matches(start: date | None = None) -> ApiSnapshot:
     if not api_client.has_api_key():
         return ApiSnapshot(
             matches=[],
-            generated_at=datetime.now().strftime("%H:%M:%S"),
+            generated_at=local_clock(),
             notice=MISSING_KEY_NOTE,
             error=MISSING_KEY_ERROR,
             rate_limited=False,
@@ -1691,7 +1696,7 @@ def collect_matches(start: date | None = None) -> ApiSnapshot:
 
     return ApiSnapshot(
         matches=matches,
-        generated_at=datetime.now().strftime("%H:%M:%S"),
+        generated_at=local_clock(),
         notice=notice,
         error=error,
         rate_limited=rate_limited,

@@ -1,7 +1,8 @@
 import asyncio
-from datetime import datetime
 
 import reflex as rx
+
+from app.states.bsd_state import local_clock
 
 
 class AppState(rx.State):
@@ -9,13 +10,21 @@ class AppState(rx.State):
 
     active_tab: str = "home"
     auto_refresh: bool = True
+    # Стандарден интервал; кога има натпревари во тек се користи пократок
+    # интервал за да бидат резултатот, минутата и статусот што поблиску до
+    # реално време, но сè уште во разумни граници за јавните API-ја.
     base_interval: int = 45
+    live_interval: int = 20
     backoff_interval: int = 180
     refresh_interval: int = 45
     seconds_until_refresh: int = 45
     backoff_active: bool = False
+    live_active: bool = False
     is_refreshing: bool = False
     loop_active: bool = False
+    # Секој трет live круг вклучува и целосно освежување на Mutating
+    # изворот, за да не се праќаат премногу барања кон јавната страница.
+    tick_count: int = 0
     last_updated: str = "--:--:--"
 
     @rx.var
@@ -34,17 +43,23 @@ class AppState(rx.State):
                 "Ограничено од API-то · следно освежување за "
                 f"{self.seconds_until_refresh}с"
             )
+        if self.live_active:
+            return f"Live режим · освежување за {self.seconds_until_refresh}с"
         return f"Следно освежување за {self.seconds_until_refresh}с"
 
     async def _apply_backoff(self) -> None:
-        """Го зголемува интервалот кога API-то врати 429."""
+        """Го приспособува интервалот според 429 и според live натпревари."""
         from app.states.bsd_state import BSDState
 
         bsd = await self.get_state(BSDState)
         self.backoff_active = bsd.rate_limited
-        self.refresh_interval = (
-            self.backoff_interval if bsd.rate_limited else self.base_interval
-        )
+        self.live_active = (not bsd.rate_limited) and bsd.live_count > 0
+        if bsd.rate_limited:
+            self.refresh_interval = self.backoff_interval
+        elif self.live_active:
+            self.refresh_interval = self.live_interval
+        else:
+            self.refresh_interval = self.base_interval
         if self.seconds_until_refresh > self.refresh_interval:
             self.seconds_until_refresh = self.refresh_interval
 
@@ -87,7 +102,7 @@ class AppState(rx.State):
         yield ComparisonState.sync
         yield ModelsState.sync
         await self._apply_backoff()
-        self.last_updated = datetime.now().strftime("%H:%M:%S")
+        self.last_updated = local_clock()
         self.is_refreshing = False
 
     @rx.event(background=True)
@@ -96,11 +111,12 @@ class AppState(rx.State):
             if self.loop_active:
                 return
             self.loop_active = True
-            self.last_updated = datetime.now().strftime("%H:%M:%S")
+            self.last_updated = local_clock()
 
         while True:
             await asyncio.sleep(1)
             do_refresh = False
+            light_cycle = False
             async with self:
                 if not self.auto_refresh:
                     continue
@@ -108,6 +124,12 @@ class AppState(rx.State):
                 if self.seconds_until_refresh <= 0:
                     self.seconds_until_refresh = self.refresh_interval
                     self.is_refreshing = True
+                    self.tick_count += 1
+                    # Во live режим само секој трет круг го освежува и
+                    # Mutating изворот (јавна HTML страница).
+                    light_cycle = self.live_active and (
+                        self.tick_count % 3 != 0
+                    )
                     do_refresh = True
 
             if not do_refresh:
@@ -122,15 +144,17 @@ class AppState(rx.State):
             from app.states.sportscore_state import SportScoreState
 
             yield BSDState.refresh_data
-            yield MutatingState.refresh
+            if not light_cycle:
+                yield MutatingState.refresh
             yield MutatingState.sync_coverage
             yield SportScoreState.refresh
             yield OverviewState.sync
             yield MarketsState.sync
             yield ComparisonState.sync
-            yield ModelsState.sync
+            if not light_cycle:
+                yield ModelsState.sync
 
             async with self:
                 await self._apply_backoff()
-                self.last_updated = datetime.now().strftime("%H:%M:%S")
+                self.last_updated = local_clock()
                 self.is_refreshing = False

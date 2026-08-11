@@ -1,12 +1,12 @@
 """Состојба за дополнителниот SportScore таб (јавен widget API)."""
 
 import asyncio
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 import reflex as rx
 
 from app.states import sportscore_client
-from app.states.bsd_state import local_today
+from app.states.bsd_state import local_clock, local_today
 from app.states.sportscore_client import SportScoreRow
 
 MAX_VISIBLE = 24
@@ -194,7 +194,7 @@ class SportScoreState(rx.State):
         self.error = ""
         self.has_loaded = True
         self.is_loading = False
-        self.fetched_at = datetime.now().strftime("%H:%M:%S")
+        self.fetched_at = local_clock()
 
     @rx.event
     async def load(self):
