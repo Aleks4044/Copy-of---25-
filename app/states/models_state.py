@@ -1,8 +1,10 @@
+import asyncio
 import random
 from typing import TypedDict
 
 import reflex as rx
 
+from app.states import predictions
 from app.states.bsd_state import local_clock
 
 
@@ -108,6 +110,38 @@ class ModelsState(rx.State):
         "edge": 0.0,
         "sample": 0.0,
     }
+
+    # ── XGBoost + Stacking (одделно од постоечкиот Meta-Ensemble) ──
+    stacking_accuracy: float = 0.0
+    stacking_today_accuracy: float = 0.0
+    stacking_today_correct: int = 0
+    stacking_today_total: int = 0
+    stacking_acc_1x2: float = 0.0
+    stacking_acc_btts: float = 0.0
+    stacking_acc_over25: float = 0.0
+    stacking_log_loss: float = 0.0
+    stacking_brier: float = 0.0
+    stacking_roi: float = 0.0
+    stacking_sample: int = 0
+    stacking_delta_vs_meta: float = 0.0
+    stacking_updated_at: str = "--:--:--"
+    stacking_rows: int = 0
+    stacking_predictions: int = 0
+    stacking_saved: int = 0
+    stacking_note: str = ""
+    stacking_is_loading: bool = False
+    stacking_backtest: list[predictions.BacktestWeek] = []
+
+    @rx.var
+    def stacking_has_data(self) -> bool:
+        return self.stacking_predictions > 0
+
+    @rx.var
+    def stacking_today_label(self) -> str:
+        return (
+            f"{self.stacking_today_correct} од {self.stacking_today_total} "
+            f"точни · {self.stacking_today_accuracy:.1f}%"
+        )
 
     @rx.var
     def total_count(self) -> int:
@@ -371,6 +405,8 @@ class ModelsState(rx.State):
         )
         if not self.models:
             self._refresh(settled)
+        if self.stacking_predictions == 0 and not self.stacking_is_loading:
+            yield ModelsState.refresh_stacking
 
     @rx.event
     async def sync(self):
@@ -381,6 +417,56 @@ class ModelsState(rx.State):
             [m for m in bsd.matches if m["status"] in ("finished", "live")]
         )
         self._refresh(settled)
+
+    def _apply_stacking(
+        self, result: predictions.StackingResult, saved: int
+    ) -> None:
+        """Ги пренесува пресметаните метрики во одделните stacking_* полиња."""
+        summary = result["metrics"]
+        self.stacking_accuracy = float(summary["accuracy"])
+        self.stacking_acc_1x2 = float(summary["acc_1x2"])
+        self.stacking_acc_btts = float(summary["acc_btts"])
+        self.stacking_acc_over25 = float(summary["acc_over25"])
+        self.stacking_log_loss = float(summary["log_loss"])
+        self.stacking_brier = float(summary["brier"])
+        self.stacking_roi = float(summary["roi"])
+        self.stacking_sample = int(summary["sample"])
+        self.stacking_today_correct = result["today_correct"]
+        self.stacking_today_total = result["today_total"]
+        self.stacking_today_accuracy = result["today_accuracy"]
+        self.stacking_rows = result["rows"]
+        self.stacking_predictions = result["predictions"]
+        self.stacking_note = result["note"]
+        self.stacking_backtest = result["backtest"]
+        self.stacking_saved = saved
+        self.stacking_delta_vs_meta = round(
+            self.stacking_accuracy - float(self.meta["global_accuracy"]), 2
+        )
+        self.stacking_updated_at = local_clock()
+
+    @rx.event
+    async def refresh_stacking(self):
+        """Го тренира и оценува XGBoost + Stacking врз реалните редови."""
+        from app.states.bsd_state import BSDState
+
+        if self.stacking_is_loading:
+            return
+        bsd = await self.get_state(BSDState)
+        matches = [dict(match) for match in bsd.matches]
+        base_models = [dict(row) for row in self.models]
+        self.stacking_is_loading = True
+        yield
+        result = await asyncio.to_thread(
+            predictions.run_pipeline, matches, base_models
+        )
+        saved = 0
+        if result["predictions"] > 0:
+            saved = await asyncio.to_thread(
+                predictions.persist_predictions, result, result["metrics"]
+            )
+        self._apply_stacking(result, saved)
+        self.stacking_is_loading = False
+        yield
 
     @rx.event
     def set_family_filter(self, family: str):

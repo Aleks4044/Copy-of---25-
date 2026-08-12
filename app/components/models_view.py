@@ -1,5 +1,6 @@
 import reflex as rx
 
+from app.states.predictions import BacktestWeek
 from app.states.models_state import (
     BacktestPoint,
     FamilySummary,
@@ -493,6 +494,175 @@ def _meta_panel() -> rx.Component:
     )
 
 
+def _stacking_metric(label: str, value: rx.Var | str) -> rx.Component:
+    return rx.el.div(
+        rx.el.span(
+            label,
+            class_name="text-[10px] font-semibold uppercase tracking-wider text-zinc-500",
+        ),
+        rx.el.span(
+            value,
+            class_name="mt-0.5 text-sm font-semibold text-white tabular-nums",
+        ),
+        class_name="flex w-full min-w-0 flex-col rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2",
+    )
+
+
+def _stacking_week(row: BacktestWeek) -> rx.Component:
+    return rx.el.div(
+        rx.el.span(
+            row["week"],
+            class_name="w-10 shrink-0 text-[10px] font-semibold text-zinc-500 tabular-nums",
+        ),
+        rx.el.div(
+            rx.el.div(
+                class_name="h-full rounded-full bg-blue-500 transition-all duration-700",
+                style={"width": f"{row['accuracy']}%"},
+            ),
+            class_name="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-zinc-800",
+        ),
+        rx.el.span(
+            f"{row['accuracy']:.1f}%",
+            class_name="w-14 shrink-0 text-right text-[10px] font-semibold text-zinc-300 tabular-nums",
+        ),
+        rx.el.span(
+            f"ROI {row['roi']:.2f}%",
+            class_name="hidden w-20 shrink-0 text-right text-[10px] font-medium text-zinc-500 tabular-nums sm:block",
+        ),
+        class_name="flex items-center gap-2",
+    )
+
+
+def stacking_meta_card() -> rx.Component:
+    """XGBoost + Stacking картичка веднаш до постоечкиот Meta-Ensemble панел."""
+    return rx.el.div(
+        rx.el.div(
+            rx.el.div(
+                rx.icon("boxes", class_name="h-4 w-4 text-blue-400"),
+                rx.el.div(
+                    rx.el.h3(
+                        "XGBoost + Stacking",
+                        class_name="text-sm font-semibold tracking-tight text-white",
+                    ),
+                    rx.el.p(
+                        f"Stacking врз излезите од {ModelsState.total_count} модели · {ModelsState.stacking_rows} редови · {ModelsState.stacking_predictions} предвидувања · ажурирано {ModelsState.stacking_updated_at}",
+                        class_name="text-xs font-medium text-zinc-500",
+                    ),
+                    class_name="flex min-w-0 flex-col",
+                ),
+                class_name="flex min-w-0 items-center gap-3",
+            ),
+            rx.el.button(
+                rx.icon(
+                    "refresh-cw",
+                    class_name=rx.cond(
+                        ModelsState.stacking_is_loading,
+                        "h-3.5 w-3.5 animate-spin",
+                        "h-3.5 w-3.5",
+                    ),
+                ),
+                rx.el.span("Освежи модел", class_name="whitespace-nowrap"),
+                on_click=ModelsState.refresh_stacking,
+                class_name="flex shrink-0 items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-blue-500",
+            ),
+            class_name="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 px-4 py-3",
+        ),
+        rx.el.div(
+            rx.el.div(
+                rx.el.div(
+                    rx.el.span(
+                        "Глобална точност",
+                        class_name="text-[11px] font-semibold uppercase tracking-wider text-zinc-500",
+                    ),
+                    rx.el.p(
+                        f"{ModelsState.stacking_accuracy:.1f}%",
+                        class_name="mt-1 text-2xl font-semibold tracking-tight text-white tabular-nums sm:text-3xl",
+                    ),
+                    rx.el.p(
+                        ModelsState.stacking_today_label,
+                        class_name="mt-1 text-xs font-medium text-zinc-500",
+                    ),
+                    class_name="min-w-0 flex-1",
+                ),
+                rx.el.div(
+                    rx.el.span(
+                        "наспроти Meta-Ensemble",
+                        class_name="text-[10px] font-semibold uppercase tracking-wider text-zinc-500",
+                    ),
+                    rx.el.span(
+                        f"{ModelsState.stacking_delta_vs_meta:.2f} п.п.",
+                        class_name=rx.cond(
+                            ModelsState.stacking_delta_vs_meta >= 0.0,
+                            "mt-1 w-fit rounded-full border border-emerald-500/35 bg-emerald-500/10 px-2 py-0.5 text-xs font-semibold text-emerald-300 tabular-nums",
+                            "mt-1 w-fit rounded-full border border-amber-500/35 bg-amber-500/10 px-2 py-0.5 text-xs font-semibold text-amber-300 tabular-nums",
+                        ),
+                    ),
+                    class_name="flex shrink-0 flex-col items-end",
+                ),
+                class_name="flex items-start justify-between gap-3",
+            ),
+            rx.el.div(
+                rx.el.div(
+                    class_name="h-full rounded-full bg-blue-500 transition-all duration-700",
+                    style={"width": f"{ModelsState.stacking_accuracy}%"},
+                ),
+                class_name="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-zinc-800",
+            ),
+            rx.el.div(
+                _stacking_metric("1X2", f"{ModelsState.stacking_acc_1x2:.1f}%"),
+                _stacking_metric("ГГ", f"{ModelsState.stacking_acc_btts:.1f}%"),
+                _stacking_metric(
+                    "Над 2.5", f"{ModelsState.stacking_acc_over25:.1f}%"
+                ),
+                _stacking_metric(
+                    "Log-loss", f"{ModelsState.stacking_log_loss:.3f}"
+                ),
+                _stacking_metric("Brier", f"{ModelsState.stacking_brier:.3f}"),
+                _stacking_metric("ROI", f"{ModelsState.stacking_roi:.2f}%"),
+                class_name="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3",
+            ),
+            rx.cond(
+                ModelsState.stacking_backtest.length() > 0,
+                rx.el.div(
+                    rx.el.span(
+                        "Ротирачки бектест (до 12 недели)",
+                        class_name="text-[10px] font-semibold uppercase tracking-wider text-zinc-500",
+                    ),
+                    rx.el.div(
+                        rx.foreach(
+                            ModelsState.stacking_backtest, _stacking_week
+                        ),
+                        class_name="mt-2 flex flex-col gap-1.5",
+                    ),
+                    class_name="mt-4 w-full rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2.5",
+                ),
+                rx.fragment(),
+            ),
+            rx.el.div(
+                rx.el.span(
+                    f"Зачувани {ModelsState.stacking_saved} реда како XGBoost_Stacking (is_meta)",
+                    class_name="text-[10px] font-semibold text-zinc-400 tabular-nums",
+                ),
+                rx.el.span(
+                    f"Обем: {ModelsState.stacking_sample} решени натпревари",
+                    class_name="text-[10px] font-medium text-zinc-500 tabular-nums",
+                ),
+                class_name="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-blue-500/25 bg-blue-500/[0.04] px-3 py-2",
+            ),
+            rx.cond(
+                ModelsState.stacking_note != "",
+                rx.el.p(
+                    ModelsState.stacking_note,
+                    class_name="mt-2 text-[10px] font-medium text-zinc-600",
+                ),
+                rx.fragment(),
+            ),
+            class_name="p-4",
+        ),
+        class_name="w-full rounded-xl border border-zinc-800 bg-zinc-900/50",
+    )
+
+
 def _comparison_row(row: ModelRow) -> rx.Component:
     return rx.el.tr(
         rx.el.td(
@@ -706,6 +876,7 @@ def models_view() -> rx.Component:
             ),
             class_name="mt-4 flex w-full flex-col gap-4 lg:flex-row",
         ),
+        rx.el.div(stacking_meta_card(), class_name="mt-4 w-full"),
         rx.el.div(_comparison_table(), class_name="mt-4 w-full"),
         class_name="w-full",
     )
