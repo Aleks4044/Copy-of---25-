@@ -168,13 +168,14 @@ def _emblem(logo: rx.Var, name: rx.Var) -> rx.Component:
             logo != "",
             rx.image(
                 src=logo,
-                alt=name,
+                alt="",
                 loading="lazy",
+                aria_hidden="true",
                 class_name="size-5 object-contain",
             ),
             rx.icon("shield", class_name="h-3 w-3 text-zinc-600"),
         ),
-        title=name,
+        aria_hidden="true",
         class_name="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-md border border-zinc-800 bg-zinc-950/70",
     )
 

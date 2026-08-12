@@ -189,20 +189,22 @@ def _team_emblem(logo_url: rx.Var, name: rx.Var) -> rx.Component:
             logo_url != "",
             rx.image(
                 src=logo_url,
-                alt=name,
+                alt="",
                 loading="lazy",
+                aria_hidden="true",
                 class_name="size-5 object-contain",
             ),
             rx.cond(
                 name != "",
                 rx.el.span(
                     name.upper()[0],
+                    aria_hidden="true",
                     class_name="text-[10px] font-bold text-zinc-400",
                 ),
                 rx.icon("shield", class_name="h-3 w-3 text-zinc-600"),
             ),
         ),
-        title=name,
+        aria_hidden="true",
         class_name="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-md border border-zinc-800 bg-zinc-950/70",
     )
 

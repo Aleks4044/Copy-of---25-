@@ -12,6 +12,10 @@ import math
 import time
 import unicodedata
 
+from app.states.log_filters import install_fotmob_log_filter
+
+install_fotmob_log_filter()
+
 FOTMOB_SOURCE = "fotmob"
 FOTMOB_SOURCE_LABEL = "Fotmob статистика"
 

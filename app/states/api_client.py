@@ -82,6 +82,8 @@ def get_optional_dict(
             timeout=TIMEOUT,
         )
     except requests.RequestException as error:
+        # Очекувана мрежна состојба (timeout/нема конекција) — само кратка
+        # безопасна info линија, без stack trace.
         logging.exception("Unexpected error")
         logging.info(
             f"Подресурсот {path} е недостапен: {_network_label(error)}"
@@ -127,6 +129,7 @@ def get_list_soft(
             timeout=TIMEOUT,
         )
     except requests.RequestException as error:
+        # Очекувана мрежна состојба — тивко, без stack trace.
         logging.exception("Unexpected error")
         logging.info(f"Ресурсот {path} е недостапен: {_network_label(error)}")
         return [], 0

@@ -22,10 +22,11 @@ LOCAL_TZ_NAME = "Europe/Skopje"
 def _local_zone() -> timezone | ZoneInfo:
     try:
         return ZoneInfo(LOCAL_TZ_NAME)
-    except Exception:
+    except Exception as error:
         logging.exception("Unexpected error")
         logging.info(
-            "Локалната временска зона не е достапна; се користи UTC отстапка."
+            "Локалната временска зона не е достапна "
+            f"({type(error).__name__}); се користи UTC отстапка."
         )
         return timezone.utc
 
